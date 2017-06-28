@@ -31,7 +31,7 @@ python setMultiplex.py [-h] -i [I] -o [O] -f [F [F ...]] -r [R [R ...]] -n [N] [
                           space separated)
     -set [SET [SET ...]]  Restict the choice of multiplexing design(s) to a list
                           of combinations (file(s) with forward and reverse
-                          primers names in 1st and 2nd columns, repaectively
+                          primers names in 1st and 2nd columns, respectively
     --one                 Get the first selection only (default: off)
     --nolog               Write a log file with the tested combination sets
                           (default: on)
@@ -45,5 +45,5 @@ python setMultiplex.py [-h] -i [I] -o [O] -f [F [F ...]] -r [R [R ...]] -n [N] [
 ```
 
 #### Requirements
-Python2.7
-Biopython
+Python2.7<br\ >
+Biopython<br\ >
