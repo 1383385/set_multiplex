@@ -45,5 +45,5 @@ python setMultiplex.py [-h] -i [I] -o [O] -f [F [F ...]] -r [R [R ...]] -n [N] [
 ```
 
 #### Requirements
-Python2.7<br\ >
-Biopython<br\ >
+Python2.7<br />
+Biopython<br />
