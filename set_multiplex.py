@@ -14,7 +14,7 @@ __version__ = "1.0"
 __maintainer__ = "Franck Lejzerowicz"
 __email__ = "franck.lejzerowicz@unige.ch"
 
-def setMultiplex():
+def set_multiplex():
     """This script needs as input the tagged primers in fasta format, the prefix names of the forward and reverse pair(s), the output file name and a number of primer combinations. It only performs for short-construct primers corresponding to the fusion of n-nt long tags with an amplification primer. All tagged variants of an amplication must share the same prefix name, before a separator (default: "-")."""
     parser=argparse.ArgumentParser()
     parser.add_argument('-i', nargs='?', required=True, help='Tagged primers fasta file')
@@ -68,6 +68,11 @@ def setMultiplex():
             print '  \n'.join(rmCombis)
     tags, primersF, primersR = get_tags_dict(tagFile, forNames, revNames, toRemove, verbose)
     allCombis = get_all_combis(setChoice, primersF, primersR, nCombis, rmCombis)
+    freqs = get_primers_freqs(allCombis)
+    if verbose:
+        print 'Max primers frequencies:'
+        print '  \n'.join(['%s\t%s' % (x,freqs[x]) for x in freqs])
+
     if verbose:
         print 'Candidate combinations:'
         print '  \n'.join(allCombis)
@@ -105,7 +110,8 @@ def setMultiplex():
         o.write('-maxRep\t%s\n' % maxRep)
         o.write('\n')
 
-    maxRep = check_maxRep(primersF, primersR, nCombis, maxRep, verbose)
+    maxrep_set = get_maxrep_set(primersF, primersR, nCombis, freqs)
+    maxRep = check_maxRep(primersF, primersR, nCombis, freqs, maxRep, verbose, setChoice, maxrep_set)
 
     maxreps = []
     while 1:
@@ -120,7 +126,7 @@ def setMultiplex():
             while numRep > maxRep:
                 if c % 1000 == 0 and step > 1:
                     step = step - 1
-                combis, numRep, step = make_pfpr_design(randomArg, primersF, primersR, allCombis, nCombis, maxRep, step, numRep, verbose)
+                combis, numRep, step = make_pfpr_design(primersF, primersR, allCombis, freqs, nCombis, maxRep, step, numRep, setChoice, verbose)
                 maxreps.append(numRep)
                 c += 1
         else:
@@ -152,6 +158,21 @@ def setMultiplex():
             break
     num = get_base_props(tagLen, primerSet)
     show_last_selection(num, combis, verbose, log, o, oOut)
+
+def get_primers_freqs(combis):
+    freqs = {}
+    for combi in combis:
+        f = combi.split()[0]
+        r = combi.split()[1]
+        if freqs.has_key(f):
+            freqs[f] += 1
+        else:
+            freqs[f] = 1
+        if freqs.has_key(r):
+            freqs[r] += 1
+        else:
+            freqs[r] = 1
+    return freqs
 
 def make_lsd(n, size):
     lsd = [[0]*size for i in range(size)]
@@ -229,16 +250,17 @@ def translate_to_primers(lsd, primersF, primersR, allCombis):
         reps.append(i)
     return combis, max(reps)
 
-def get_dPrimersF(pF, n, m):
+def get_dPrimersF(pF, n, m, f):
     d = {}
     while sum(d.values()) != n:
         cur = random.choice(pF)
         if d.has_key(cur):
-            if d[cur] >= m:
+            if d[cur] >= m or f[cur] == d[cur]:
                 continue
             d[cur] += 1
         else:
-            d[cur] = 1
+            if f.has_key(cur):
+                d[cur] = 1
     return d
 
 def get_revInit(fP, rPrimers, allCombis):
@@ -291,17 +313,32 @@ def get_revNext(candiR_dico, fP, rPrimers, dPrimersR, allCombis, curRev, verbose
         return 0, 0
     return rP, curRev
 
-def make_pfpr_design(randomArg, primersF, primersR, allCombis, nCombis, maxRep, step, numRep, verbose):
+def get_possible_rev(primersF, primersR, allCombis):
+    d = {}
+    setF = list(set([x.split()[0] for x in allCombis]))
+    for pF in primersF:
+        if pF in setF:
+            d[pF] = []
+            allRev = list(set([x.split()[1] for x in allCombis if x.split()[0] == pF]))
+            for rev in allRev:
+                d[pF].append(rev)
+    return d
+
+def make_pfpr_design(primersF, primersR, allCombis, freqs, nCombis, maxRep, step, numRep, setChoice, verbose):
     combis = []
     # get the forward primers usage frequencies dict {primer1: 3, primer2: 2, ...}
-    dPrimersF = get_dPrimersF(primersF, nCombis, maxRep)
+    dPrimersF = get_dPrimersF(primersF, nCombis, maxRep, freqs)
     # get a list with each reverse primer appearing maxRep times
-    rPrimers = reduce(lambda n, m: n + m, [[x]*maxRep for x in primersR])
+    if setChoice:
+        rPrimers = get_possible_rev(primersF, primersR, allCombis)
+    else:
+        rPrimers = reduce(lambda n, m: n + m, [[x]*maxRep for x in primersR])
     if verboseDebug:
+        print
         print 'Current dPrimersF'
         print '-----------------'
+        print 'idx, primer, number'
         for v, w in enumerate(sorted(dPrimersF)):
-            print 'idx, primer, number'
             print v, w, dPrimersF[w]
         print 'total:'
         print sum(dPrimersF.values())
@@ -315,39 +352,43 @@ def make_pfpr_design(randomArg, primersF, primersR, allCombis, nCombis, maxRep, 
                 print
                 print 'Current forward primer', fP, '/', indexP
                 print '---------------------------->'
-            if indexP == 0:
-                # get a random reverse primer and list initialized with this primer only
-                rP, curRev = get_revInit(fP, rPrimers, allCombis)
-                if verboseDebug:
-                    print
-                    print '*** 0 (1st choice):', rP
+            if setChoice:
+                rP = random.choice(rPrimers[fP])
+                rPrimers[fP].remove(rP)
             else:
-                # get a dict {}
-                candiR_dico = get_candiD_dict(rPrimers, primersR, step, curRev)
-                rP, curRev = get_revNext(candiR_dico, fP, rPrimers, dPrimersR, allCombis, curRev, verbose)
-                if rP == 0:
-                    break
-                if verboseDebug:
-                    print '*** 0 (2nd choice #1):', rP
-                cc = 0
-                step2 = 4
-                while 1:
-                    cc += 1
-                    if cc % 1000 == 0 and step2 > 1:
-                        step2 -= 1
-                    elif cc == 5000:
+                if indexP == 0:
+                    # get a random reverse primer and list initialized with this primer only
+                    rP, curRev = get_revInit(fP, rPrimers, allCombis)
+                    if verboseDebug:
+                        print
+                        print '*** 0 (1st choice):', rP
+                else:
+                    # get a dict {}
+                    candiR_dico = get_candiD_dict(rPrimers, primersR, step, curRev)
+                    rP, curRev = get_revNext(candiR_dico, fP, rPrimers, dPrimersR, allCombis, curRev, verbose)
+                    if rP == 0:
                         break
-                    if dPrimersR.has_key(rP):
-                        curStep2 = abs(primersF.index(fP) - primersF.index(dPrimersR[rP]))
-                        if curStep2 < step2:
-                            rP = random.choice(rPrimers)
-                            while '%s %s' % (fP, rP) not in allCombis:
+                    if verboseDebug:
+                        print '*** 0 (2nd choice #1):', rP
+                    cc = 0
+                    step2 = 4
+                    while 1:
+                        cc += 1
+                        if cc % 1000 == 0 and step2 > 1:
+                            step2 -= 1
+                        elif cc == 5000:
+                            break
+                        if dPrimersR.has_key(rP):
+                            curStep2 = abs(primersF.index(fP) - primersF.index(dPrimersR[rP]))
+                            if curStep2 < step2:
                                 rP = random.choice(rPrimers)
-                            continue
-                    rPrimers.remove(rP)
-                    break
-                if verboseDebug:
-                    print '*** 0 (2nd choice #2):', rP
+                                while '%s %s' % (fP, rP) not in allCombis:
+                                    rP = random.choice(rPrimers)
+                                continue
+                        rPrimers.remove(rP)
+                        break
+                    if verboseDebug:
+                        print '*** 0 (2nd choice #2):', rP
             combis.append('%s %s' % (fP, rP))
             dPrimersR[rP] = fP
         if len(combis) == nCombis:
@@ -518,12 +559,30 @@ def get_all_combis(setChoice, primersF, primersR, nCombis, rmCombis):
                 retSet.append(curCombi)
         return retSet
 
-def check_maxRep(primersF, primersR, nCombis, maxRep, verbose):
+
+def get_maxrep_set(primersF, primersR, nCombis, freqs):
+    N = 0
+    for Ps in [primersF, primersR]:
+        n = 0
+        for r in range(1, int(max(freqs.values())+1)):
+            for p in Ps:
+                if freqs.has_key(p) and freqs[p] >= r:
+                    n += 1
+            if n >= nCombis:
+                if r >= N:
+                    N = r
+                break
+    return N
+
+
+def check_maxRep(primersF, primersR, nCombis, freqs, maxRep, verbose, setChoice, maxrep_set):
     n_pF = len(primersF)
     n_pR = len(primersR)
     forMax = maxRep * n_pF
     revMax = maxRep * n_pR
-    if forMax < nCombis or revMax < nCombis:
+    if setChoice:
+        maxRep = maxrep_set
+    elif forMax < nCombis or revMax < nCombis:
         if verbose:
             print 'The requested max primer-usage frequency of %s is too low to design %s combinations' % (maxRep, nCombis)
         for n in range(maxRep+1, max([n_pF, n_pR])):
@@ -537,4 +596,4 @@ def check_maxRep(primersF, primersR, nCombis, maxRep, verbose):
             print 'The requested max primer-usage frequency of %s is ok to design %s combinations' % (maxRep, nCombis)
     return maxRep
 
-setMultiplex()
+set_multiplex()
