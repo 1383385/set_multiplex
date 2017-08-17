@@ -8,7 +8,7 @@ import itertools
 
 __author__ = "Franck Lejzerowicz"
 __copyright__ = "Copyright 2017, The Deep-Sea Microbiome Project"
-__credits__ = ["Yoann Dufresne", "Jan Pawlowski"]
+__credits__ = ["Yoann Dufresne"]
 __license__ = "GPL V3"
 __version__ = "1.0"
 __maintainer__ = "Franck Lejzerowicz"
